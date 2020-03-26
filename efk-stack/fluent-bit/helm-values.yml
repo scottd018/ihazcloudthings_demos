@@ -1,0 +1,10 @@
+image:
+  fluent_bit:
+    repository: fluent/fluent-bit
+    tag: 1.4.1
+backend:
+  type: es
+  es:
+    host: 'elasticsearch-elasticsearch-coordinating-only'
+tolerations:
+  - operator: Exists

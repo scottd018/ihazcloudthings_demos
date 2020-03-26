@@ -1,0 +1,14 @@
+---
+image:
+  registry: docker.io
+  repository: bitnami/kibana
+  tag: 7.6.1-debian-10-r21
+elasticsearch:
+  hosts: 
+    - elasticsearch-elasticsearch-coordinating-only
+  port: 9200
+persistence:
+  enabled: false
+service:
+  type: NodePort
+  nodePort: 31000

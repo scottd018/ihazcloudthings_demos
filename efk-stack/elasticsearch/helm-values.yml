@@ -1,0 +1,23 @@
+---
+image:
+  registry: docker.io
+  repository: bitnami/elasticsearch
+  tag: 7.6.1-debian-10-r22
+client:
+  replicas: 1
+master:
+  replicas: 1
+  persistence:
+    storageClass: efk-master
+    size: 5Gi
+cluster:
+  env:
+    MINIMUM_MASTER_NODES: 1
+    RECOVER_AFTER_MASTER_NODES: 1
+    EXPECTED_MASTER_NODES: 1
+data:
+  replicas: 1
+  heapSize: 300m
+  persistence:
+    storageClass: efk-data
+    size: 5Gi
