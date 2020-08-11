@@ -1,0 +1,100 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kube-apiserver-audit-policy-overlay
+data:
+  audit-policy-overlay.yaml: |
+    #@ load("@ytt:overlay", "overlay")
+
+    #@overlay/match by=overlay.subset({"metadata":{"name":"kube-apiserver"}})
+    ---
+    spec:
+      containers:
+        #@overlay/match by='name'
+        - name: kube-apiserver
+          command:
+            #@overlay/append
+            - --audit-log-path=/var/lib/kube-audit/audit.log
+            #@overlay/append
+            - --audit-policy-file=/etc/kubernetes/audit/audit-policy.yaml
+            #@overlay/append
+            - --audit-log-maxbackup=1
+            #@overlay/append
+            - --audit-log-maxsize=10
+            #@overlay/append
+            - --audit-webhook-config-file=/etc/kubernetes/audit/audit-policy-webhook.yaml
+            #@overlay/append
+            - --audit-webhook-batch-max-wait=5s
+          volumeMounts:
+            #@overlay/append
+            - mountPath: /var/lib/kube-audit
+              name: kube-audit
+            #@overlay/append
+            - mountPath: /etc/kubernetes/audit
+              name: kubernetes-audit-config
+      volumes:
+        #@overlay/append
+        - hostPath:
+            path: /var/lib/kube-audit
+            type: DirectoryOrCreate
+          name: kube-audit
+        #@overlay/append
+        - hostPath:
+            type: Directory
+            path: /etc/kubernetes/audit
+          name: kubernetes-audit-config
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: audit-policy-overlay-job
+spec:
+  activeDeadlineSeconds: 60
+  backoffLimit: 0
+  template:
+    spec:
+      # schedule on master node(s)
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/master
+
+      # create kubernetes manifests host path from master
+      volumes:
+        - name: kubernetes-audit-config
+          hostPath:
+            path: /etc/kubernetes/audit
+            type: DirectoryOrCreate
+        - name: kubernetes-manifests-config
+          hostPath:
+            path: /etc/kubernetes/manifests
+        - name: audit-policy-overlay-config
+          configMap:
+            name: kube-apiserver-audit-policy-overlay
+      restartPolicy: Never
+      containers:
+        - image: gerritk/ytt:v0.30.0
+          name: audit-policy-overlay
+          command:
+            - "/bin/sh"
+          args:
+            - "-c"
+            - |
+              cat /etc/kubernetes/manifests/kube-apiserver.yaml > /etc/kubernetes/audit/kube-apiserver.yaml.orig
+              cat /tmp/audit-policy-overlay.yaml > /etc/kubernetes/audit/audit-policy-overlay.yaml
+              /usr/bin/ytt template -f /etc/kubernetes/manifests/kube-apiserver.yaml -f /etc/kubernetes/audit/audit-policy-overlay.yaml > /etc/kubernetes/audit/kube-apiserver.yaml.new
+              cat /etc/kubernetes/audit/kube-apiserver.yaml.new > /etc/kubernetes/manifests/kube-apiserver.yaml
+
+          # mount kubernetes manifest volume into container
+          volumeMounts:
+            - mountPath: /etc/kubernetes/manifests
+              name: kubernetes-manifests-config
+            - mountPath: /etc/kubernetes/audit
+              name: kubernetes-audit-config
+            - mountPath: /tmp/audit-policy-overlay.yaml
+              name: audit-policy-overlay-config
+              subPath: audit-policy-overlay.yaml
+              readOnly: true
+

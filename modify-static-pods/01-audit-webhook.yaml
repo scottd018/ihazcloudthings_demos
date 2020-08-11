@@ -1,0 +1,63 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kube-apiserver-audit-webhook
+data:
+  audit-policy-webhook.yaml: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+    - name: sysdig
+      cluster:
+        server: http://$AGENT_SERVICE_CLUSTERIP:7765/k8s_audit
+    contexts:
+    - context:
+        cluster: sysdig
+        user: ""
+      name: default-context
+    current-context: default-context
+    preferences: {}
+    users: []
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: audit-policy-webhook-job
+spec:
+  template:
+    spec:
+      # schedule on master node(s)
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/master
+
+      # create kubernetes manifests host path from master
+      volumes:
+        - name: kubernetes-audit-config
+          hostPath:
+            path: /etc/kubernetes/audit
+            type: DirectoryOrCreate
+        - name: audit-policy-webhook-config
+          configMap:
+            name: kube-apiserver-audit-webhook
+
+      restartPolicy: Never
+      containers:
+        - image: bash:latest
+          name: audit-policy-webhook
+          command:
+            - cp
+            - /tmp/audit-policy-webhook.yaml
+            - /etc/kubernetes/audit/audit-policy-webhook.yaml
+
+          # mount kubernetes manifest volume into container
+          volumeMounts:
+            - mountPath: /etc/kubernetes/audit
+              name: kubernetes-audit-config
+            - mountPath: /tmp/audit-policy-webhook.yaml
+              name: audit-policy-webhook-config
+              subPath: audit-policy-webhook.yaml
+              readOnly: true
